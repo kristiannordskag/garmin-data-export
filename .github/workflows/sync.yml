@@ -1,10 +1,16 @@
-name: Manual Garmin Sync
+name: Garmin Browser Cookie Sync
+
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *' # Runs automatically every day at 4:00 AM
+  workflow_dispatch: # Allows you to run it manually anytime
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v4
@@ -12,34 +18,42 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Install Dependencies
       run: pip install requests
 
-    - name: Process Web Session and Fetch Data
+    - name: Fetch Data via Active Session
       env:
         GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
       run: |
-        # Write the browser session cookie directly to the workspace
+        # Format the exported JSON cookie block securely
         echo "$GARMIN_COOKIES" > cookies.json
         
-        # Pulls the active session securely bypassing the SSO login endpoint
+        # Requests live summary metrics bypassing the broken SSO endpoints completely
         python -c "
-        import json, requests
-        with open('cookies.json') as f:
-            cookies = {c['name']: c['value'] for c in json.load(f)}
+        import json, requests, os, datetime
         
-        # Request data directly from the user summary API using your active session
-        res = requests.get('https://connect.garmin.com/usersummary-service/statistics/user/dailySummary', cookies=cookies)
-        with open('index.html', 'w') as out:
+        with open('cookies.json') as f:
+            raw_cookies = json.load(f)
+        cookies = {c['name']: c['value'] for c in raw_cookies}
+        
+        # Target the daily activity overview endpoint using today's date
+        today = datetime.date.today().isoformat()
+        url = f'https://connect.garmin.com/usersummary-service/statistics/user/dailySummary?calendarDate={today}'
+        
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'}
+        res = requests.get(url, cookies=cookies, headers=headers)
+        
+        os.makedirs('export', exist_ok=True)
+        with open('export/daily_summary.json', 'w') as out:
             out.write(res.text)
         "
 
-    - name: Push to Live Link
+    - name: Commit and Push Changes
       run: |
-        git config --global user.name 'Garmin Manual Bot'
-        git config --global user.email 'bot@github.com'
-        git add index.html
-        git commit -m "Manual browser-cookie sync update" || exit 0
+        git config --global user.name 'Garmin Cookie Bot'
+        git config --global user.email 'actions@github.com'
+        git add export/
+        git commit -m "Updated stats using active browser session [skip ci]" || exit 0
         git push
