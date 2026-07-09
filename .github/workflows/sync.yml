@@ -1,29 +1,4 @@
-name: Garmin Browser Cookie Sync
-
-on:
-  schedule:
-    - cron: '0 4 * * *' # Runs automatically every day at 4:00 AM
-  workflow_dispatch: # Allows you to run it manually anytime
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install Dependencies
-      run: pip install requests
-
-    - name: Fetch Data via Active Session
+- name: Fetch Data via Active Session
       env:
         GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
       run: |
@@ -50,13 +25,12 @@ jobs:
                 'NK': 'NT'
             }
             
-            # Explicitly route using your display identity
-            display_name = 'kristiannordskag'
             today = datetime.date.today().isoformat()
             
-            summary_url = f'https://connect.garmin.com/usersummary-service/usersummary/daily/{display_name}?calendarDate={today}'
-            print(f'Attempting data sync for user: {display_name}')
+            # Using the native web proxy endpoint—Garmin infers your user profile directly from the session cookie
+            summary_url = f'https://connect.garmin.com/modern/proxy/usersummary-service/usersummary/daily?calendarDate={today}'
             
+            print('Fetching daily summary via web proxy...')
             res = requests.get(summary_url, cookies=cookies, headers=headers)
             print(f'Garmin Server Response Code: {res.status_code}')
             
@@ -73,11 +47,3 @@ jobs:
             print(f'Script failed with error: {e}')
             sys.exit(1)
         "
-
-    - name: Commit and Push Changes
-      run: |
-        git config --global user.name 'Garmin Cookie Bot'
-        git config --global user.email 'actions@github.com'
-        git add export/
-        git commit -m "Updated stats using active browser session [skip ci]" || exit 0
-        git push
