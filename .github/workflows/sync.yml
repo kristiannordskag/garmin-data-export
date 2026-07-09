@@ -20,7 +20,7 @@ jobs:
       - name: Install Secure Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install garminconnect requests
+          pip install garth garminconnect requests
 
       - name: Compile Ultimate AI-Ready Dashboard
         env:
@@ -30,12 +30,18 @@ jobs:
           
           python -c "
           import json, os, sys
+          import garth
           from garminconnect import Garmin
           
           try:
-              print('Initializing secure Garmin client session...')
+              print('Loading secure session tokens via Garth...')
+              # Load the session cookies directly into the garth engine state
+              garth.Client().load('cookies.json')
+              
+              print('Initializing Garmin client session...')
               client = Garmin()
-              client.login_cookies('cookies.json')
+              # Link the logged-in garth instance straight to the client
+              client.garth = garth.client
               
               print('Pulling data streams from Garmin Cloud...')
               profile = client.get_user_profile()
@@ -101,7 +107,7 @@ jobs:
 
               <script>
                   const dataset = {json.dumps(master_data)};
-                  document.getElementById('raw-payload').textContent = JSON.stringify(dataset, null, 2);
+                  document.getElementById(\'raw-payload\').textContent = JSON.stringify(dataset, null, 2);
               </script>
           </body>
           </html>'''
