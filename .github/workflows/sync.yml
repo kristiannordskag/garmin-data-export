@@ -2,8 +2,8 @@ name: Garmin Browser Cookie Sync
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Runs automatically every day at 4:00 AM
-  workflow_dispatch: # Allows you to run it manually anytime
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -27,27 +27,47 @@ jobs:
       env:
         GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
       run: |
-        # Format the exported JSON cookie block securely
         echo "$GARMIN_COOKIES" > cookies.json
         
-        # Requests live summary metrics bypassing the broken SSO endpoints completely
         python -c "
-        import json, requests, os, datetime
+        import json, requests, os, datetime, sys
         
-        with open('cookies.json') as f:
-            raw_cookies = json.load(f)
-        cookies = {c['name']: c['value'] for c in raw_cookies}
-        
-        # Target the daily activity overview endpoint using today's date
-        today = datetime.date.today().isoformat()
-        url = f'https://connect.garmin.com/usersummary-service/statistics/user/dailySummary?calendarDate={today}'
-        
-        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'}
-        res = requests.get(url, cookies=cookies, headers=headers)
-        
-        os.makedirs('export', exist_ok=True)
-        with open('export/daily_summary.json', 'w') as out:
-            out.write(res.text)
+        try:
+            with open('cookies.json') as f:
+                raw_cookies = json.load(f)
+            
+            # Handle both list formats and dictionary formats automatically
+            if isinstance(raw_cookies, list):
+                cookies = {c['name']: c['value'] for c in raw_cookies if 'name' in c}
+            elif isinstance(raw_cookies, dict):
+                cookies = raw_cookies
+            else:
+                print('Error: Cookie JSON format is invalid.')
+                sys.exit(1)
+                
+            today = datetime.date.today().isoformat()
+            url = f'https://connect.garmin.com/usersummary-service/statistics/user/dailySummary?calendarDate={today}'
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*'
+            }
+            
+            res = requests.get(url, cookies=cookies, headers=headers)
+            print(f'Garmin Server Response Code: {res.status_code}')
+            
+            if res.status_code != 200:
+                print(f'Server Response Content: {res.text[:200]}')
+                sys.exit(1)
+                
+            os.makedirs('export', exist_ok=True)
+            with open('export/daily_summary.json', 'w') as out:
+                out.write(res.text)
+            print('Successfully fetched data!')
+            
+        except Exception as e:
+            print(f'Script failed with error: {e}')
+            sys.exit(1)
         "
 
     - name: Commit and Push Changes
