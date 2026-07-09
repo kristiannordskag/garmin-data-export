@@ -1,80 +1,100 @@
-name: Garmin Browser Cookie Sync
+name: Garmin Full History Backup
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Runs automatically every day at 4:00 AM
-  workflow_dispatch: # Allows you to run it manually anytime
+    - cron: '0 4 * * *' # Runs automatically every morning at 4 AM
+  workflow_dispatch: # Allows you to run it manually right now
 
 jobs:
-  sync:
+  backup:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install Dependencies
-      run: pip install requests
+      - name: Install Export Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install garminconnect garth requests
 
-    - name: Fetch Data via Active Session
-      env:
-        GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
-      run: |
-        echo "$GARMIN_COOKIES" > cookies.json
-        
-        python -c "
-        import json, requests, os, datetime, sys
-        
-        try:
-            with open('cookies.json') as f:
-                raw_cookies = json.load(f)
-            
-            if isinstance(raw_cookies, list):
-                cookies = {c['name']: c['value'] for c in raw_cookies if 'name' in c}
-            elif isinstance(raw_cookies, dict):
-                cookies = raw_cookies
-            else:
-                print('Error: Cookie JSON format is invalid.')
-                sys.exit(1)
-                
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*'
-            }
-            
-            today = datetime.date.today().isoformat()
-            summary_url = f'https://connect.garmin.com/modern/proxy/usersummary-service/usersummary/daily?calendarDate={today}'
-            
-            print('Fetching daily summary via web proxy...')
-            res = requests.get(summary_url, cookies=cookies, headers=headers)
-            print(f'Garmin Server Response Code: {res.status_code}')
-            
-            if res.status_code != 200:
-                print(f'Server Response Content: {res.text[:200]}')
-                sys.exit(1)
-                
-            os.makedirs('export', exist_ok=True)
-            with open('export/daily_summary.json', 'w') as out:
-                out.write(res.text)
-            print('Successfully fetched data!')
-            
-        except Exception as e:
-            print(f'Script failed with error: {e}')
-            sys.exit(1)
-        "
+      - name: Fetch Entire Garmin History
+        env:
+          GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
+        run: |
+          echo "$GARMIN_COOKIES" > cookies.json
+          
+          # This script downloads all endpoints from day one of your account
+          python -c "
+          import json, os, requests, sys
+          from datetime import datetime, timedelta
+          
+          try:
+              with open('cookies.json') as f:
+                  raw_cookies = json.load(f)
+              cookies = {c['name']: c['value'] for c in raw_cookies if 'name' in c} if isinstance(raw_cookies, list) else raw_cookies
+              
+              headers = {
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                  'Accept': 'application/json, text/plain, */*',
+                  'Referer': 'https://connect.garmin.com/modern/'
+              }
+              
+              os.makedirs('export/activities', exist_ok=True)
+              os.makedirs('export/health', exist_ok=True)
+              
+              # 1. Fetch User Profile & Preferences
+              print('Exporting profile settings...')
+              prof = requests.get('https://connect.garmin.com/modern/proxy/userprofile-service/userprofile', cookies=cookies, headers=headers).json()
+              with open('export/profile.json', 'w') as f: json.dump(prof, f, indent=2)
+              
+              # 2. Fetch All Personal Records & Badges
+              print('Exporting personal records...')
+              prs = requests.get(f'https://connect.garmin.com/modern/proxy/personalrecord-service/personalrecord/prs/{prof[\"userProfile\"][\"displayName\"]}', cookies=cookies, headers=headers).json()
+              with open('export/personal_records.json', 'w') as f: json.dump(prs, f, indent=2)
 
-    - name: Commit and Push Changes
-      run: |
-        git config --global user.name 'Garmin Cookie Bot'
-        git config --global user.email 'actions@github.com'
-        git add -f export/
-        git commit -m "Updated stats using active browser session [skip ci]" || exit 0
-        git push
-        
+              # 3. Fetch All Logged Gear / Shoes
+              print('Exporting tracked gear...')
+              gear = requests.get(f'https://connect.garmin.com/modern/proxy/gear-service/gear/filterGear?uuid={prof[\"userProfile\"][\"userGUID\"]}', cookies=cookies, headers=headers).json()
+              with open('export/gear.json', 'w') as f: json.dump(gear, f, indent=2)
+
+              # 4. Fetch Complete Activity History (Loops through batches of 100)
+              print('Exporting all activity history...')
+              start, limit = 0, 100
+              all_activities = []
+              while True:
+                  act_url = f'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?start={start}&limit={limit}'
+                  res = requests.get(act_url, cookies=cookies, headers=headers).json()
+                  if not res: break
+                  all_activities.extend(res)
+                  start += limit
+                  if len(res) < limit: break
+                  
+              with open('export/all_activities_summary.json', 'w') as f:
+                  json.dump(all_activities, f, indent=2)
+              print(f'Saved summaries for {len(all_activities)} total activities.')
+
+              # 5. Fetch Detailed Splits/Metrics for recent individual activities
+              print('Exporting individual activity details...')
+              for act in all_activities[:25]: # Grabs details/splits for your 25 most recent runs
+                  act_id = act['activityId']
+                  detail = requests.get(f'https://connect.garmin.com/modern/proxy/activity-service/activity/{act_id}', cookies=cookies, headers=headers).json()
+                  with open(f'export/activities/activity_{act_id}.json', 'w') as f: json.dump(detail, f, indent=2)
+
+              print('Bulk download complete without errors!')
+          except Exception as e:
+              print(f'Backup process aborted: {e}')
+              sys.exit(1)
+          "
+
+      - name: Commit and Push Archive Changes
+        run: |
+          git config --global user.name 'Garmin Cookie Bot'
+          git config --global user.email 'actions@github.com'
+          git add -f export/
+          git commit -m "Full historical Garmin backup compiled [skip ci]" || exit 0
+          git push
