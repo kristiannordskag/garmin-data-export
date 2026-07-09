@@ -1,0 +1,36 @@
+name: Manual Garmin Sync
+on:
+  workflow_dispatch: # Enables the manual "Run workflow" button in your browser/app
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: pip install garminconnect garth
+
+    - name: Fetch Garmin Cloud Data
+      env:
+        GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+        GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+      # Fetches the last 3 days to keep the file perfectly sized for an AI chat prompt
+      run: python garmin_export.py --username "$GARMIN_EMAIL" --password "$GARMIN_PASSWORD" --compact --days 3
+
+    - name: Format for Webpage
+      run: mv export/garmin_export_*.txt index.html || echo "No file found"
+
+    - name: Push to Live Link
+      run: |
+        git config --global user.name 'Garmin Manual Bot'
+        git config --global user.email 'bot@github.com'
+        git add index.html
+        git commit -m "Manual health sync update" || exit 0
+        git push
