@@ -26,23 +26,24 @@ jobs:
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
-          echo "$GARMIN_COOKIES" > tokens.json
-          
           python -c "
           import json, os, sys
           from garminconnect import Garmin
           
           try:
-              print('Initializing native Garmin client...')
-              # Pass dummy credentials so the constructor doesn't abort instantly
-              client = Garmin(email='runner@archive.local', password='dummypassword')
+              print('Loading token array from GitHub environment...')
+              token_string = os.environ.get('GARMIN_COOKIES', '')
               
-              print('Injecting token storage layer manually...')
-              with open('tokens.json', 'r') as f:
-                  saved_tokens = json.load(f)
+              if not token_string:
+                  raise ValueError('GARMIN_COOKIES secret is empty or missing in GitHub.')
               
-              # Re-hydrate the inner token storage layer directly
-              client.token_store.set_tokens(saved_tokens)
+              # Parse the JSON string to ensure it is valid
+              token_data = json.loads(token_string)
+              
+              print('Initializing native Garmin client via token parameter...')
+              # Pass the data structure directly into the official token parameter
+              client = Garmin(token_store=token_data)
+              client.login()
               
               print('Pulling data streams from Garmin Cloud...')
               profile = client.get_user_profile()
