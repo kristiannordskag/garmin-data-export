@@ -1,4 +1,29 @@
-- name: Fetch Data via Active Session
+name: Garmin Browser Cookie Sync
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # Runs automatically every day at 4:00 AM
+  workflow_dispatch: # Allows you to run it manually anytime
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: pip install requests
+
+    - name: Fetch Data via Active Session
       env:
         GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
       run: |
@@ -21,13 +46,10 @@
                 
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'NK': 'NT'
+                'Accept': 'application/json, text/plain, */*'
             }
             
             today = datetime.date.today().isoformat()
-            
-            # Using the native web proxy endpoint—Garmin infers your user profile directly from the session cookie
             summary_url = f'https://connect.garmin.com/modern/proxy/usersummary-service/usersummary/daily?calendarDate={today}'
             
             print('Fetching daily summary via web proxy...')
@@ -47,3 +69,11 @@
             print(f'Script failed with error: {e}')
             sys.exit(1)
         "
+
+    - name: Commit and Push Changes
+      run: |
+        git config --global user.name 'Garmin Cookie Bot'
+        git config --global user.email 'actions@github.com'
+        git add export/
+        git commit -m "Updated stats using active browser session [skip ci]" || exit 0
+        git push
