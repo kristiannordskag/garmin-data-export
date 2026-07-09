@@ -26,9 +26,7 @@ jobs:
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
-          # Create the exact default directory and token file required by v3.0+
-          mkdir -p ~/.garminconnect
-          echo "$GARMIN_COOKIES" > ~/.garminconnect/garmin_tokens.json
+          echo "$GARMIN_COOKIES" > tokens.json
           
           python -c "
           import json, os, sys
@@ -36,9 +34,15 @@ jobs:
           
           try:
               print('Initializing native Garmin client...')
-              # The client automatically discovers the token file in ~/.garminconnect/
-              client = Garmin()
-              client.login()
+              # Pass dummy credentials so the constructor doesn't abort instantly
+              client = Garmin(email='runner@archive.local', password='dummypassword')
+              
+              print('Injecting token storage layer manually...')
+              with open('tokens.json', 'r') as f:
+                  saved_tokens = json.load(f)
+              
+              # Re-hydrate the inner token storage layer directly
+              client.token_store.set_tokens(saved_tokens)
               
               print('Pulling data streams from Garmin Cloud...')
               profile = client.get_user_profile()
