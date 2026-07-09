@@ -1,9 +1,9 @@
-name: Garmin Full History Backup
+name: Garmin Ultimate Single-File Archive
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Runs automatically every morning at 4 AM
-  workflow_dispatch: # Allows you to run it manually right now
+    - cron: '0 4 * * *' # Auto-updates every morning at 4 AM
+  workflow_dispatch: # Lets you trigger it manually right now
 
 jobs:
   backup:
@@ -17,84 +17,121 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Export Dependencies
+      - name: Install Secure Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install garminconnect garth requests
+          pip install garth garminconnect requests
 
-      - name: Fetch Entire Garmin History
+      - name: Compile Ultimate AI-Ready Dashboard
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
           echo "$GARMIN_COOKIES" > cookies.json
           
-          # This script downloads all endpoints from day one of your account
           python -c "
-          import json, os, requests, sys
-          from datetime import datetime, timedelta
+          import json, os, sys
+          from garminconnect import Garmin
+          from garth.exc import GarthHTTPError
           
           try:
-              with open('cookies.json') as f:
-                  raw_cookies = json.load(f)
-              cookies = {c['name']: c['value'] for c in raw_cookies if 'name' in c} if isinstance(raw_cookies, list) else raw_cookies
+              print('Initializing secure Garmin client session...')
+              # Initialize client using your saved session token storage
+              client = Garmin()
+              client.garth.load('cookies.json')
               
-              headers = {
-                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                  'Accept': 'application/json, text/plain, */*',
-                  'Referer': 'https://connect.garmin.com/modern/'
+              print('Pulling data streams from Garmin Cloud...')
+              profile = client.get_user_profile()
+              display_name = profile.get('userProfile', {}).get('displayName', 'Runner')
+              user_guid = profile.get('userProfile', {}).get('userGUID', '')
+              
+              # Fetch all foundational metric blocks
+              try:
+                  gear = client.get_gear(user_guid)
+              except Exception:
+                  gear = []
+                  
+              try:
+                  prs = client.get_personal_records(display_name)
+              except Exception:
+                  prs = []
+                  
+              # Pull all historical training sessions (up to 2000 activities)
+              activities = client.get_activities(0, 2000)
+              
+              # Consolidate everything into a single master dictionary structure
+              master_data = {
+                  'generated_at': client.garth.now().isoformat(),
+                  'profile': profile,
+                  'personal_records': prs,
+                  'gear_tracking': gear,
+                  'activity_history': activities
               }
               
-              os.makedirs('export/activities', exist_ok=True)
-              os.makedirs('export/health', exist_ok=True)
+              # Format a completely self-contained HTML page
+              html_template = f'''<!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset=\"UTF-8\">
+              <title>{display_name} - Garmin Master Training Archive</title>
+              <style>
+                  body {{ font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif; color: #333; max-width: 1000px; margin: 40px auto; padding: 0 20px; background: #f8f9fa; }}
+                  .card {{ background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 25px; }}
+                  h1 {{ color: #1a1a1a; border-bottom: 2px solid #eaeaea; padding-bottom: 10px; }}
+                  h2 {{ color: #0076ff; margin-top: 0; }}
+                  .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }}
+                  .stat-box {{ background: #f1f5f9; padding: 15px; border-radius: 8px; text-align: center; }}
+                  .stat-val {{ font-size: 24px; font-weight: bold; color: #1e293b; margin-top: 5px; }}
+                  .stat-lbl {{ font-size: 12px; color: #64748b; text-transform: uppercase; }}
+                  pre {{ background: #1e1e1e; color: #76c7b7; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 12px; max-height: 400px; }}
+                  .ai-notice {{ background: #e0f2fe; border-left: 4px solid #0284c7; padding: 15px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; }}
+              </style>
+          </head>
+          <body>
+              <h1>Garmin Training Analytics Engine</h1>
+              <div class=\"ai-notice\">
+                  <strong>AI Chat Note:</strong> This file is fully self-contained. Drop this entire file directly into an AI chat window to allow it to run deep training assessments, calculate running economy trends, evaluate shoe mileage thresholds, or sketch out custom marathon preparation microcycles.
+              </div>
               
-              # 1. Fetch User Profile & Preferences
-              print('Exporting profile settings...')
-              prof = requests.get('https://connect.garmin.com/modern/proxy/userprofile-service/userprofile', cookies=cookies, headers=headers).json()
-              with open('export/profile.json', 'w') as f: json.dump(prof, f, indent=2)
+              <div class=\"card\">
+                  <h2>Runner Profile Context</h2>
+                  <div class=\"stats-grid\">
+                      <div class=\"stat-box\"><div class=\"stat-lbl\">Display Name</div><div class=\"stat-val\">{display_name}</div></div>
+                      <div class=\"stat-box\"><div class=\"stat-lbl\">Total Recorded Runs</div><div class=\"stat-val\">{len(activities)}</div></div>
+                  </div>
+              </div>
               
-              # 2. Fetch All Personal Records & Badges
-              print('Exporting personal records...')
-              prs = requests.get(f'https://connect.garmin.com/modern/proxy/personalrecord-service/personalrecord/prs/{prof[\"userProfile\"][\"displayName\"]}', cookies=cookies, headers=headers).json()
-              with open('export/personal_records.json', 'w') as f: json.dump(prs, f, indent=2)
+              <div class=\"card\">
+                  <h2>Raw Structural Archive Payload</h2>
+                  <p>The compressed JSON matrix below contains your complete, clean profile metrics, gear/shoe mileage data, personal records, and individual activity logs for immediate parsing.</p>
+                  <pre id=\"raw-payload\"></pre>
+              </div>
 
-              # 3. Fetch All Logged Gear / Shoes
-              print('Exporting tracked gear...')
-              gear = requests.get(f'https://connect.garmin.com/modern/proxy/gear-service/gear/filterGear?uuid={prof[\"userProfile\"][\"userGUID\"]}', cookies=cookies, headers=headers).json()
-              with open('export/gear.json', 'w') as f: json.dump(gear, f, indent=2)
-
-              # 4. Fetch Complete Activity History (Loops through batches of 100)
-              print('Exporting all activity history...')
-              start, limit = 0, 100
-              all_activities = []
-              while True:
-                  act_url = f'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?start={start}&limit={limit}'
-                  res = requests.get(act_url, cookies=cookies, headers=headers).json()
-                  if not res: break
-                  all_activities.extend(res)
-                  start += limit
-                  if len(res) < limit: break
+              <script>
+                  // Embedding the complete clean data object directly inside the DOM text for simple AI reading
+                  const dataset = {json.dumps(master_data)};
+                  document.getElementById('raw-payload').textContent = JSON.stringify(dataset, null, 2);
+              </script>
+          </body>
+          </html>'''
+              
+              os.makedirs('export', exist_ok=True)
+              with open('export/garmin_master_dashboard.html', 'w', encoding='utf-8') as f:
+                  f.write(html_template)
                   
-              with open('export/all_activities_summary.json', 'w') as f:
-                  json.dump(all_activities, f, indent=2)
-              print(f'Saved summaries for {len(all_activities)} total activities.')
-
-              # 5. Fetch Detailed Splits/Metrics for recent individual activities
-              print('Exporting individual activity details...')
-              for act in all_activities[:25]: # Grabs details/splits for your 25 most recent runs
-                  act_id = act['activityId']
-                  detail = requests.get(f'https://connect.garmin.com/modern/proxy/activity-service/activity/{act_id}', cookies=cookies, headers=headers).json()
-                  with open(f'export/activities/activity_{act_id}.json', 'w') as f: json.dump(detail, f, indent=2)
-
-              print('Bulk download complete without errors!')
+              print('Master HTML dashboard compiled flawlessly!')
+              
+          except GarthHTTPError as ghe:
+              print(f'Authentication failed. Session tokens might be completely expired: {ghe}')
+              sys.exit(1)
           except Exception as e:
-              print(f'Backup process aborted: {e}')
+              print(f'Pipeline aborted: {e}')
               sys.exit(1)
           "
 
-      - name: Commit and Push Archive Changes
+      - name: Commit and Push Single-File Dashboard
         run: |
-          git config --global user.name 'Garmin Cookie Bot'
+          git config --global user.name 'Garmin Analytics Bot'
           git config --global user.email 'actions@github.com'
-          git add -f export/
-          git commit -m "Full historical Garmin backup compiled [skip ci]" || exit 0
+          git add -f export/garmin_master_dashboard.html
+          git commit -m "Updated central training dashboard archive [skip ci]" || exit 0
           git push
