@@ -38,25 +38,47 @@ jobs:
               if not token_string:
                   raise ValueError('GARMIN_COOKIES secret is empty or missing in GitHub.')
               
-              # Parse token data
               token_data = json.loads(token_string)
               
-              # Define a standard dummy account identifier for the cache filename
-              dummy_email = 'runner@archive.local'
+              # Pull the actual email string from the token structure if present
+              # This ensures the cache filename perfectly matches internal token claims
+              real_email = None
+              if isinstance(token_data, dict):
+                  real_email = token_data.get('email') or token_data.get('username')
+              elif isinstance(token_data, list) and len(token_data) > 0:
+                  # Fallback inspection if structured as an internal list
+                  for entry in token_data:
+                      if isinstance(entry, dict) and ('email' in entry or 'username' in entry):
+                          real_email = entry.get('email') or entry.get('username')
+                          break
+              
+              if not real_email:
+                  print('Could not auto-extract email from tokens. Falling back to default identifier.')
+                  real_email = 'runner@archive.local'
+              else:
+                  print(f'Detected account identity context: {real_email}')
               
               print('Pre-seeding Garmin native disk cache layers...')
               cache_dir = Path.home() / '.garminconnect'
               cache_dir.mkdir(parents=True, exist_ok=True)
               
-              # Write the tokens directly to the hidden file the library targets
-              cache_file = cache_dir / dummy_email
+              cache_file = cache_dir / real_email
               with open(cache_file, 'w', encoding='utf-8') as f:
                   json.dump(token_data, f)
                   
               print(f'Disk cache re-hydrated at: {cache_file}')
               
-              print('Initializing standard native Garmin client...')
-              client = Garmin(email=dummy_email, password='dummypassword')
+              print('Initializing native Garmin client from local state...')
+              # Passing None/empty password prevents fallback web auth attempts if tokens are expired
+              client = Garmin(email=real_email, password='')
+              
+              # Force push the token data directly into the active state session cache
+              # to protect against strict filename validation mismatches
+              try:
+                  client.token_store = token_data
+              except AttributeError:
+                  pass
+                  
               client.login()
               
               print('Pulling data streams from Garmin Cloud...')
