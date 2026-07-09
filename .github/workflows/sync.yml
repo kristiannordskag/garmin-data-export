@@ -1,28 +1,4 @@
-name: Garmin Ultimate Single-File Archive
-
-on:
-  schedule:
-    - cron: '0 4 * * *' # Auto-updates every morning at 4 AM
-  workflow_dispatch: # Lets you trigger it manually right now
-
-jobs:
-  backup:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Secure Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install garth garminconnect requests
-
-      - name: Compile Ultimate AI-Ready Dashboard
+- name: Compile Ultimate AI-Ready Dashboard
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
@@ -31,20 +7,19 @@ jobs:
           python -c "
           import json, os, sys
           from garminconnect import Garmin
-          from garth.exc import GarthHTTPError
           
           try:
               print('Initializing secure Garmin client session...')
-              # Initialize client using your saved session token storage
+              # Initialize client and load the session cookies directly
               client = Garmin()
-              client.garth.load('cookies.json')
+              client.login_cookies('cookies.json')
               
               print('Pulling data streams from Garmin Cloud...')
               profile = client.get_user_profile()
               display_name = profile.get('userProfile', {}).get('displayName', 'Runner')
               user_guid = profile.get('userProfile', {}).get('userGUID', '')
               
-              # Fetch all foundational metric blocks
+              # Fetch all foundational metric blocks safely
               try:
                   gear = client.get_gear(user_guid)
               except Exception:
@@ -60,7 +35,6 @@ jobs:
               
               # Consolidate everything into a single master dictionary structure
               master_data = {
-                  'generated_at': client.garth.now().isoformat(),
                   'profile': profile,
                   'personal_records': prs,
                   'gear_tracking': gear,
@@ -107,7 +81,6 @@ jobs:
               </div>
 
               <script>
-                  // Embedding the complete clean data object directly inside the DOM text for simple AI reading
                   const dataset = {json.dumps(master_data)};
                   document.getElementById('raw-payload').textContent = JSON.stringify(dataset, null, 2);
               </script>
@@ -120,18 +93,7 @@ jobs:
                   
               print('Master HTML dashboard compiled flawlessly!')
               
-          except GarthHTTPError as ghe:
-              print(f'Authentication failed. Session tokens might be completely expired: {ghe}')
-              sys.exit(1)
           except Exception as e:
               print(f'Pipeline aborted: {e}')
               sys.exit(1)
           "
-
-      - name: Commit and Push Single-File Dashboard
-        run: |
-          git config --global user.name 'Garmin Analytics Bot'
-          git config --global user.email 'actions@github.com'
-          git add -f export/garmin_master_dashboard.html
-          git commit -m "Updated central training dashboard archive [skip ci]" || exit 0
-          git push
