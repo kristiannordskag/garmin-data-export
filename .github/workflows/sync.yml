@@ -15,29 +15,31 @@ jobs:
         python-version: '3.10'
 
     - name: Install Dependencies
-      run: pip install garminconnect garth python-dotenv
+      run: pip install requests
 
-    - name: Create Env File and Fetch Garmin Cloud Data
+    - name: Process Web Session and Fetch Data
       env:
-        GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
-        GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+        GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
       run: |
-        # Inject secrets into a .env file that the script automatically reads
-        echo "GARMIN_EMAIL=$GARMIN_EMAIL" > .env
-        echo "GARMIN_PASSWORD=$GARMIN_PASSWORD" >> .env
+        # Write the browser session cookie directly to the workspace
+        echo "$GARMIN_COOKIES" > cookies.json
         
-        # Run the script cleanly with only valid flags
-        python garmin_export.py --compact --days 3
-
-    - name: Format for Webpage
-      run: |
-        mkdir -p export
-        mv export/garmin_export_*.txt index.html || echo "No file found"
+        # Pulls the active session securely bypassing the SSO login endpoint
+        python -c "
+        import json, requests
+        with open('cookies.json') as f:
+            cookies = {c['name']: c['value'] for c in json.load(f)}
+        
+        # Request data directly from the user summary API using your active session
+        res = requests.get('https://connect.garmin.com/usersummary-service/statistics/user/dailySummary', cookies=cookies)
+        with open('index.html', 'w') as out:
+            out.write(res.text)
+        "
 
     - name: Push to Live Link
       run: |
         git config --global user.name 'Garmin Manual Bot'
         git config --global user.email 'bot@github.com'
         git add index.html
-        git commit -m "Manual health sync update" || exit 0
+        git commit -m "Manual browser-cookie sync update" || exit 0
         git push
