@@ -74,6 +74,7 @@ jobs:
       run: |
         git config --global user.name 'Garmin Cookie Bot'
         git config --global user.email 'actions@github.com'
-        git add export/
+        git add -f export/
         git commit -m "Updated stats using active browser session [skip ci]" || exit 0
         git push
+        
