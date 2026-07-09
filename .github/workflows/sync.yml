@@ -46,29 +46,16 @@ jobs:
                 
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*'
+                'Accept': 'application/json, text/plain, */*',
+                'NK': 'NT'
             }
             
-            # Step 1: Dynamically fetch your Garmin Display Name
-            profile_url = 'https://connect.garmin.com/userprofile-service/userprofile/user-settings'
-            profile_res = requests.get(profile_url, cookies=cookies, headers=headers)
-            
-            if profile_res.status_code != 200:
-                print(f'Failed to fetch user settings. Status Code: {profile_res.status_code}')
-                sys.exit(1)
-                
-            profile_data = profile_res.json()
-            display_name = profile_data.get('userData', {}).get('displayName')
-            
-            if not display_name:
-                print('Could not find displayName in your user settings response.')
-                sys.exit(1)
-                
-            print(f'Found Garmin Display Name: {display_name}')
-
-            # Step 2: Fetch the actual Daily Summary using your display name
+            # Explicitly route using your display identity
+            display_name = 'kristiannordskag'
             today = datetime.date.today().isoformat()
+            
             summary_url = f'https://connect.garmin.com/usersummary-service/usersummary/daily/{display_name}?calendarDate={today}'
+            print(f'Attempting data sync for user: {display_name}')
             
             res = requests.get(summary_url, cookies=cookies, headers=headers)
             print(f'Garmin Server Response Code: {res.status_code}')
