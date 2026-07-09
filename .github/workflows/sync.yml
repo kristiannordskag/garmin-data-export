@@ -1,4 +1,28 @@
-- name: Compile Ultimate AI-Ready Dashboard
+name: Garmin Ultimate Single-File Archive
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # Auto-updates every morning at 4 AM
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Native Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install garminconnect requests
+
+      - name: Compile Ultimate AI-Ready Dashboard
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
@@ -21,7 +45,6 @@
               dummy_email = 'runner@archive.local'
               
               print('Pre-seeding Garmin native disk cache layers...')
-              # garminconnect defaults to ~/.garminconnect/ or ~/.garminconnect/<email>
               cache_dir = Path.home() / '.garminconnect'
               cache_dir.mkdir(parents=True, exist_ok=True)
               
@@ -33,7 +56,6 @@
               print(f'Disk cache re-hydrated at: {cache_file}')
               
               print('Initializing standard native Garmin client...')
-              # The library will automatically read the cache file matching this email
               client = Garmin(email=dummy_email, password='dummypassword')
               client.login()
               
@@ -116,3 +138,11 @@
               print(f'Pipeline aborted: {e}')
               sys.exit(1)
           "
+
+      - name: Commit and Push Single-File Dashboard
+        run: |
+          git config --global user.name 'Garmin Analytics Bot'
+          git config --global user.email 'actions@github.com'
+          git add -f export/garmin_master_dashboard.html
+          git commit -m "Updated central training dashboard archive [skip ci]" || exit 0
+          git push
