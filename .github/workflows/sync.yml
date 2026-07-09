@@ -3,7 +3,7 @@ name: Garmin Ultimate Single-File Archive
 on:
   schedule:
     - cron: '0 4 * * *' # Auto-updates every morning at 4 AM
-  workflow_dispatch: # Allows you to click "Run workflow" manually right now
+  workflow_dispatch: # Allows manual trigger
 
 jobs:
   backup:
@@ -17,31 +17,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Secure Dependencies
+      - name: Install Native Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install garth garminconnect requests
+          pip install garminconnect requests
 
       - name: Compile Ultimate AI-Ready Dashboard
         env:
           GARMIN_COOKIES: ${{ secrets.GARMIN_COOKIES }}
         run: |
-          echo "$GARMIN_COOKIES" > cookies.json
+          # Create the exact default directory and token file required by v3.0+
+          mkdir -p ~/.garminconnect
+          echo "$GARMIN_COOKIES" > ~/.garminconnect/garmin_tokens.json
           
           python -c "
           import json, os, sys
-          import garth
           from garminconnect import Garmin
           
           try:
-              print('Loading secure session tokens via Garth...')
-              # Load the session cookies directly into the garth engine state
-              garth.Client().load('cookies.json')
-              
-              print('Initializing Garmin client session...')
+              print('Initializing native Garmin client...')
+              # The client automatically discovers the token file in ~/.garminconnect/
               client = Garmin()
-              # Link the logged-in garth instance straight to the client
-              client.garth = garth.client
+              client.login()
               
               print('Pulling data streams from Garmin Cloud...')
               profile = client.get_user_profile()
